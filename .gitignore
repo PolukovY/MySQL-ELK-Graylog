@@ -1,0 +1,6 @@
+### NetBeans ###
+/db/data/
+/db/logs/
+/db/mongo_data/
+/graylog/
+

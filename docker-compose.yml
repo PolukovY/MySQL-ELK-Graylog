@@ -1,0 +1,85 @@
+version: '3.3'
+
+volumes:
+  fbdata: {}
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.4.0
+    environment:
+      - node.name=es01
+      - discovery.seed_hosts=es01
+      - cluster.initial_master_nodes=es01
+      - cluster.name=docker-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms4096m -Xmx4096m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    ports:
+      - "9200:9200"
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.4.0
+    environment:
+      - "ELASTICSEARCH_HOSTS=http://elasticsearch:9200"
+    ports:
+      - "5601:5601"
+  filebeat:
+    container_name: filebeat
+    hostname: filebeat
+    user: root
+    image: docker.elastic.co/beats/filebeat:7.4.0
+    volumes:
+      #Mount the filebeat configuration so users can make edit
+      - ./config/filebeat.yml:/usr/share/filebeat/filebeat.yml
+      #Mount the mysql logs into the filebeat container so we can access and and index them using the filebeat mysql module
+      - ./db/logs:/var/log/mysql/
+      #Named volume fsdata. This is used to persist the registry file between restarts, so to avoid data duplication
+      - fbdata:/usr/share/filebeat/data/
+    command: filebeat -strict.perms=false
+    restart: on-failure
+  db:
+    image: mysql:5.7
+    container_name: mysql
+    entrypoint: ""
+    command: bash -c "chown -R mysql:mysql /var/log/mysql && exec /entrypoint.sh mysqld"
+    volumes:
+      - "./db/mysql.conf.d/mysqld.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf"
+      - "./db/data:/var/lib/mysql:rw"
+      - "./db/logs:/var/log/mysql/"
+    ports:
+      - 3306:3306
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: nimda
+      MYSQL_DATABASE: test
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: nimda
+  mongo:
+    image: mongo:3
+    volumes:
+      - ./db/mongo_data:/data/db
+    ports:
+      - 27017:27017
+  graylog:
+    image: graylog/graylog:4.0
+    volumes:
+      - "./graylog/graylog_journal:/usr/share/graylog/data/journal"
+    environment:
+      # CHANGE ME (must be at least 16 characters)!
+      - GRAYLOG_PASSWORD_SECRET=somepasswordpepper
+      # Password: admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://graylog:9000/
+    ports:
+      # Graylog web interface and REST API
+      - 9000:9000
+      # Syslog TCP
+      - 1514:1514
+      # Syslog UDP
+      - 1514:1514/udp
+      # GELF TCP
+      - 12201:12201
+      # GELF UDP
+      - 12201:12201/udp
